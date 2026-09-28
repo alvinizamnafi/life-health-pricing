@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Life & Health Group Insurance Calculator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header no-print">
+  <div class="brand">
+    <h1>Life &amp; Health Group Insurance Calculator</h1>
+    <p class="tagline">Internal proposal builder — group census rating &amp; retail catalog quoting</p>
+  </div>
+</header>
+
+<main class="app-shell no-print">
+
+  <section class="panel proposal-meta">
+    <h2>Proposal Details</h2>
+    <div class="grid grid-4">
+      <label>Client / Company name
+        <input type="text" id="meta-client" placeholder="e.g. British American Tobacco Bangladesh">
+      </label>
+      <label>Prepared by
+        <input type="text" id="meta-preparedby" placeholder="Your name">
+      </label>
+      <label>Proposal date
+        <input type="date" id="meta-date">
+      </label>
+      <label>Valid until
+        <input type="date" id="meta-validuntil">
+      </label>
+    </div>
+    <div class="grid grid-3">
+      <label class="checkbox-row">
+        <input type="checkbox" id="meta-anonymize" checked>
+        Anonymize insurer name on exported quotation
+      </label>
+      <label>Group size threshold for Group Mode
+        <input type="number" id="meta-threshold" value="10" min="1">
+      </label>
+      <div class="mode-readout">
+        Suggested mode: <strong id="mode-suggestion">—</strong>
+      </div>
+    </div>
+  </section>
+
+  <nav class="mode-tabs">
+    <button class="mode-tab active" data-mode="group">Group Proposal (10+ people)</button>
+    <button class="mode-tab" data-mode="retail">Retail Quote (&lt;10 people)</button>
+  </nav>
+
+  <!-- ============ GROUP MODE ============ -->
+  <section id="mode-group" class="mode-panel panel">
+    <h2>1. Census</h2>
+    <p class="hint">Enter head counts. These drive who each benefit's premium is charged for.</p>
+    <div class="grid grid-4">
+      <label>Employees
+        <input type="number" id="census-employees" min="0" value="0">
+      </label>
+      <label>Spouses enrolled
+        <input type="number" id="census-spouses" min="0" value="0">
+      </label>
+      <label>Children enrolled
+        <input type="number" id="census-children" min="0" value="0">
+      </label>
+      <label>Maternity-eligible females (married, under 45)
+        <input type="number" id="census-maternity" min="0" value="0">
+      </label>
+    </div>
+    <div class="grid grid-3">
+      <div class="readout">All insured (Employees + Spouses + Children): <strong id="census-total-insured">0</strong></div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="census-override-toggle">
+        Override "All insured" count manually
+      </label>
+      <label id="census-override-wrap" class="hidden">Manual "All insured" override
+        <input type="number" id="census-override" min="0" value="0">
+      </label>
+    </div>
+
+    <h2>2. Insurer &amp; Benefits</h2>
+    <div class="grid grid-3">
+      <label>Rate card
+        <select id="insurer-select"></select>
+      </label>
+      <div class="readout" id="insurer-note"></div>
+    </div>
+
+    <table class="benefits-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Benefit</th>
+          <th>Sum assured (BDT)</th>
+          <th>Rate (per mille / flat)</th>
+          <th>Family loading</th>
+          <th>Eligible members</th>
+          <th>Premium / member</th>
+          <th>Total premium</th>
+        </tr>
+      </thead>
+      <tbody id="benefits-body"></tbody>
+      <tfoot>
+        <tr class="grand-total-row">
+          <td colspan="7">Grand Total (annual)</td>
+          <td id="group-grand-total">৳0</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <button class="primary-btn" id="group-generate-btn">Generate Quotation →</button>
+  </section>
+
+  <!-- ============ RETAIL MODE ============ -->
+  <section id="mode-retail" class="mode-panel panel hidden">
+    <h2>1. Team Roster</h2>
+    <p class="hint">Add each person. The tool matches live retail plans from the Bimafy catalog by age and desired coverage.</p>
+    <table class="roster-table">
+      <thead>
+        <tr>
+          <th>Name / label</th>
+          <th>Age</th>
+          <th>Insurance for</th>
+          <th>Product type</th>
+          <th>Min. coverage (BDT)</th>
+          <th>Matched plan</th>
+          <th>Premium</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="roster-body"></tbody>
+    </table>
+    <button class="secondary-btn" id="roster-add-btn">+ Add person</button>
+
+    <div class="grid grid-1" style="margin-top:16px;">
+      <div class="readout">Grand Total (annual): <strong id="retail-grand-total">৳0</strong></div>
+    </div>
+
+    <button class="primary-btn" id="retail-generate-btn">Generate Quotation →</button>
+  </section>
+
+</main>
+
+<!-- ============ PRINT / QUOTATION VIEW ============ -->
+<section id="quotation-view" class="quotation-view hidden">
+  <div class="quotation-toolbar no-print">
+    <button id="quotation-back-btn">← Back to editor</button>
+    <button id="quotation-print-btn" class="primary-btn">Download / Print PDF</button>
+  </div>
+
+  <div class="quotation-sheet" id="quotation-sheet">
+    <!-- filled by app.js -->
+  </div>
+</section>
+
+<script src="data/group-rate-card.js"></script>
+<script src="data/retail-pricing-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
