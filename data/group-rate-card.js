@@ -9,7 +9,7 @@
 //   "flat_member"  -> premium per member = rate (a straight per-head annual premium)
 //
 // eligibility maps to a census field computed in app.js:
-//   "employees", "all_insured", "maternity_eligible", "custom"
+//   "employees", "all_insured"
 
 window.GROUP_RATE_CARDS = {
   insurers: [
@@ -53,12 +53,13 @@ window.GROUP_RATE_CARDS = {
         {
           id: "health_hospicash",
           category: "Health",
-          label: "Hospitalization \u2014 Daily Cash Benefit",
+          label: "Hospitalization — Daily Cash Benefit",
           eligibility: "all_insured",
           rateBasis: "per_mille",
-          rate: { min: 0.9, max: 1.5, default: 1.2 },
+          rate: { min: 900, max: 1500, default: 1200 },
           sumAssured: { default: 5000, min: 1000, max: 5000, step: 500 },
-          note: "Raw source: \"Hospicash (min 1k max 5k)\" benefit amount, \".9 to 1.5k per thousand\" rate, \"min 3 nights max 10 nights at a stretch, 30 to 45 days between claims, multiple times possible\". Sum-assured field here is the per-night cash benefit."
+          nights: { min: 3, baseMax: 6, max: 10, default: 6, extraNightLoadingPct: 10 },
+          note: "Raw source: \"Hospicash (min 1k max 5k)\" benefit amount, \".9 to 1.5k per thousand\" rate, \"min 3 nights max 10 nights at a stretch, 30 to 45 days between claims, multiple times possible\". Rate is read literally as BDT 900–1,500 per BDT 1,000 of nightly benefit per year (the earlier 0.9–1.5 reading priced a 5,000/night cover at ~BDT 6, which is not credible) — confirm with Pragati. 3–6 nights at a stretch is priced at the base rate; each night beyond 6 adds the extra-night loading, which is a PLACEHOLDER (10% per night) until Pragati quotes it."
         },
         {
           id: "health_reimbursement",
@@ -75,19 +76,10 @@ window.GROUP_RATE_CARDS = {
           category: "Health",
           label: "Outpatient (OPD)",
           eligibility: "all_insured",
-          rateBasis: "flat_member",
-          rate: { min: 2500, max: 8000, default: 4000 },
-          note: "Raw source: small-group rate \"250tk per thousand\" vs. large-group (~100+) rate \"80tk per thousand\", plus an unlabeled \"0.5\" figure. Numbers didn't resolve cleanly to a per-mille formula against any stated sum assured, so this is modelled as a flat per-member annual premium range \u2014 re-derive from the per-mille figures once the OPD sum-assured basis is confirmed with Pragati."
-        },
-        {
-          id: "maternity",
-          category: "Maternity",
-          label: "Maternity",
-          eligibility: "maternity_eligible",
-          rateBasis: "flat_member",
-          rate: { min: 4000, max: 8000, default: 5500 },
-          minEligible: 20,
-          note: "Raw source: \"90-12 days waiting period, normal delivery, c-sec 1 lakh\", rate \"800 per thousand\", \"minimum to 20 to 50 peep[le]\". The 800/thousand figure didn't scale consistently against the stated 100,000 C-section limit, so this is modelled as a flat per-eligible-member premium (matches how your BAT/Employee Benefit Table examples actually rate maternity: ~5,250\u20135,525/member). Minimum group size for this rider: ~20\u201350 maternity-eligible members \u2014 flagged below that."
+          rateBasis: "per_mille",
+          rate: { min: 80, max: 250, default: 200 },
+          sumAssured: { default: 20000, min: 5000, max: 50000, step: 1000 },
+          note: "Rate confirmed at BDT 200 per BDT 1,000 of OPD coverage. Slider keeps the range from the raw notes (\"250tk per thousand\" small group, \"80 tk per thousand\" for ~100+ groups) so it can be negotiated down for larger groups. Sum assured is the annual OPD limit per insured."
         },
         {
           id: "critical_illness",

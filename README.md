@@ -38,11 +38,12 @@ one underwriter yet.
 
 ## Known limitations / open items
 
-- OPD and Maternity benefits in the Pragati rate card are modelled as flat per-member premiums
-  rather than a per-mille-of-sum-assured formula, because the source notes didn't resolve
-  cleanly to one — worth confirming the intended formula directly with the insurer.
-  See the in-app "why this range?" tooltip on each benefit row for the exact source text.
-- Family-loading multipliers (30% / 65%) are a manual per-benefit override, not auto-applied,
-  since the source notes didn't specify which benefits they cover.
-- Only one insurer (Pragati) has a group rate card so far — add more under
-  `data/group-rate-card.js`.
+- OPD is priced at BDT 200 per BDT 1,000 of annual OPD limit (slider keeps the 80-250 range from the raw notes).
+- Hospital daily cash: the raw note ".9 to 1.5k per thousand" is read as BDT 900-1,500 per BDT 1,000 of nightly
+  benefit per year. 3-6 nights at a stretch use the base rate; each extra night (7-10) adds a loading that is a
+  **placeholder (10% per night)** until the insurer quotes it. Confirm both with the insurer.
+- Maternity has been removed from the group rate card.
+- Family-loading multipliers (30% / 65%) are a manual per-benefit override, not auto-applied.
+- Quotations can be sent by email (mailto), WhatsApp (wa.me) or copied as text from the quotation screen; the PDF
+  still has to be attached manually because browsers cannot attach files to a mailto link.
+- Only one insurer (Pragati) has a group rate card so far; add more under `data/group-rate-card.js`.

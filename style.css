@@ -115,6 +115,8 @@ tbody tr:hover { background: #fafcfd; }
   border: 1px dashed var(--border); border-radius: 6px; padding: 6px 8px; margin-top: 4px;
 }
 
+.category-row-cell { background: #f7fafc; font-weight: 700; color: var(--teal-dark); }
+
 .grand-total-row td { font-weight: 800; font-size: 15px; color: var(--navy); border-top: 2px solid var(--navy); background: #eef4f8; }
 
 .primary-btn, .secondary-btn {
@@ -165,4 +167,35 @@ tbody tr:hover { background: #fafcfd; }
   body { background: #fff; }
   .quotation-view { background: #fff; padding: 0; }
   .quotation-sheet { box-shadow: none; padding: 0; max-width: none; }
+}
+
+/* ---- nights-at-a-stretch controls and breakdown ---- */
+.nights-controls { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.nights-controls label { font-size: 11px; }
+.nights-controls input, .nights-controls select { width: 100%; padding: 4px 6px; font-size: 12px; }
+.nights-breakdown h3 { font-size: 14px; color: var(--navy); margin: 24px 0 4px; }
+.nights-table { min-width: 0; }
+.nights-table .selected-night td { font-weight: 700; background: color-mix(in srgb, var(--teal) 14%, #fff); }
+
+/* ---- quotation: coverage details ---- */
+.q-details-title { margin-top: 28px; }
+.q-detail { margin: 10px 0 14px; break-inside: avoid; }
+.q-detail-title { font-weight: 700; font-size: 12.5px; color: #12283f; }
+.q-detail ul { margin: 4px 0 6px; padding-left: 18px; font-size: 12px; line-height: 1.55; }
+.q-detail table { margin-top: 4px; }
+.quotation-sheet .nights-table .selected-night td { background: #e3f4f1; }
+
+/* ---- send panel ---- */
+.send-panel {
+  max-width: 800px; margin: 0 auto 16px; padding: 16px 20px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.send-panel h3 { margin: 0 0 4px; font-size: 14px; color: var(--navy); }
+.send-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+@media (max-width: 700px) { .send-grid { grid-template-columns: 1fr; } }
+.send-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.send-actions .secondary-btn { margin-top: 12px; }
+.send-status { font-size: 12px; color: var(--teal-dark); margin-top: 8px; min-height: 16px; }
+input[type="email"], input[type="tel"] {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--card);
 }

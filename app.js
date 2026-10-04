@@ -78,7 +78,6 @@
       employees: 0,
       spouses: 0,
       children: 0,
-      maternity: 0,
       overrideEnabled: false,
       overrideValue: 0
     },
@@ -104,7 +103,6 @@
     switch (eligibility) {
       case "employees": return state.census.employees || 0;
       case "all_insured": return allInsuredCount();
-      case "maternity_eligible": return state.census.maternity || 0;
       default: return 0;
     }
   }
@@ -129,6 +127,10 @@
       if (rs.included === undefined) rs.included = !b.optional;
       if (rs.sumAssured === undefined && b.sumAssured) rs.sumAssured = b.sumAssured.default;
       if (rs.rate === undefined) rs.rate = b.rate.default;
+      if (b.nights) {
+        if (rs.nights === undefined) rs.nights = b.nights.default;
+        if (rs.extraNightLoadingPct === undefined) rs.extraNightLoadingPct = b.nights.extraNightLoadingPct;
+      }
       if (rs.loadingId === undefined) rs.loadingId = "single";
       if (rs.eligibleOverrideEnabled === undefined) rs.eligibleOverrideEnabled = false;
       if (rs.eligibleOverrideValue === undefined) rs.eligibleOverrideValue = 0;
@@ -138,15 +140,19 @@
     var opt = (insurer.familyLoading.options || []).find(function (o) { return o.id === loadingId; });
     return opt ? opt.multiplier : 1;
   }
+  function nightsLoadFactor(b, rs, nights) {
+    if (!b.nights) return 1;
+    var extra = Math.max(0, (nights || b.nights.default) - b.nights.baseMax);
+    return 1 + extra * (rs.extraNightLoadingPct || 0) / 100;
+  }
+  function basePerMember(b, rs, nights) {
+    var base = b.rateBasis === "per_mille" ? (rs.sumAssured / 1000) * rs.rate : rs.rate;
+    return base * nightsLoadFactor(b, rs, nights);
+  }
   function computeBenefitRow(insurer, b) {
     var rs = rowState(b.id);
     var eligible = rs.eligibleOverrideEnabled ? rs.eligibleOverrideValue : eligibleCountFor(b.eligibility);
-    var perMember;
-    if (b.rateBasis === "per_mille") {
-      perMember = (rs.sumAssured / 1000) * rs.rate;
-    } else {
-      perMember = rs.rate;
-    }
+    var perMember = basePerMember(b, rs, rs.nights);
     var mult = loadingMultiplier(insurer, rs.loadingId);
     var perMemberLoaded = perMember * mult;
     var total = rs.included ? perMemberLoaded * eligible : 0;
@@ -202,7 +208,7 @@
   }
 
   function bindCensus() {
-    ["employees", "spouses", "children", "maternity"].forEach(function (key) {
+    ["employees", "spouses", "children"].forEach(function (key) {
       var input = document.getElementById("census-" + key);
       input.value = state.census[key];
       input.addEventListener("input", function () {
@@ -272,7 +278,7 @@
 
     categories.forEach(function (cat) {
       var catRow = el("tr", "");
-      catRow.innerHTML = '<td colspan="8" style="background:#f7fafc;font-weight:700;color:#0f766e;">' + escapeHtml(cat) + "</td>";
+      catRow.innerHTML = '<td colspan="8" class="category-row-cell">' + escapeHtml(cat) + "</td>";
       tbody.appendChild(catRow);
 
       insurer.benefits.filter(function (b) { return b.category === cat; }).forEach(function (b) {
@@ -323,6 +329,34 @@
         updateBenefitsComputedCells(insurer);
       });
       tdSA.appendChild(saInput);
+      if (b.nights) {
+        var nightsWrap = el("div", "nights-controls");
+        var nightsLbl = el("label", "", "Nights at a stretch");
+        var nightsSel = el("select");
+        for (var n = b.nights.min; n <= b.nights.max; n++) {
+          var no = document.createElement("option");
+          no.value = n;
+          no.textContent = n + (n > b.nights.baseMax ? " nights (extended)" : " nights");
+          nightsSel.appendChild(no);
+        }
+        nightsSel.value = rs.nights;
+        nightsSel.addEventListener("change", function () {
+          rs.nights = parseInt(nightsSel.value, 10);
+          updateBenefitsComputedCells(insurer);
+        });
+        nightsLbl.appendChild(nightsSel);
+        var loadLbl = el("label", "", "Loading per night beyond " + b.nights.baseMax + " (%)");
+        var loadInp = el("input");
+        loadInp.type = "number"; loadInp.min = 0; loadInp.step = 1; loadInp.value = rs.extraNightLoadingPct;
+        loadInp.addEventListener("input", function () {
+          rs.extraNightLoadingPct = parseFloat(loadInp.value) || 0;
+          updateBenefitsComputedCells(insurer);
+        });
+        loadLbl.appendChild(loadInp);
+        nightsWrap.appendChild(nightsLbl);
+        nightsWrap.appendChild(loadLbl);
+        tdSA.appendChild(nightsWrap);
+      }
     } else {
       tdSA.innerHTML = '<span style="color:#6b7684;">flat rate</span>';
     }
@@ -406,20 +440,60 @@
     return tr;
   }
 
+  // One row per possible "nights at a stretch" setting for the daily-cash benefit.
+  function nightsBreakdown(insurer, b) {
+    var rs = rowState(b.id);
+    var eligible = rs.eligibleOverrideEnabled ? rs.eligibleOverrideValue : eligibleCountFor(b.eligibility);
+    var mult = loadingMultiplier(insurer, rs.loadingId);
+    var rows = [];
+    for (var n = b.nights.min; n <= b.nights.max; n++) {
+      var perMember = basePerMember(b, rs, n) * mult;
+      rows.push({
+        nights: n,
+        extended: n > b.nights.baseMax,
+        selected: n === rs.nights,
+        maxPayout: rs.sumAssured * n,
+        perMember: perMember,
+        perNight: perMember / n,
+        total: perMember * eligible
+      });
+    }
+    return rows;
+  }
+  function nightsTableHTML(rows, withTotal) {
+    var h = '<table class="nights-table"><thead><tr><th>Nights at a stretch</th><th>Max payout / admission</th><th>Premium / member</th><th>Premium per night of cover</th>' +
+      (withTotal ? "<th>Total (all members)</th>" : "") + "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      h += '<tr class="' + (r.selected ? "selected-night" : "") + '"><td>' + r.nights + (r.extended ? " (extended)" : "") + (r.selected ? " \u2713" : "") + "</td>" +
+        "<td>" + fmt(r.maxPayout) + "</td><td>" + fmt(r.perMember) + "</td><td>" + fmt(r.perNight) + "</td>" +
+        (withTotal ? "<td>" + fmt(r.total) + "</td>" : "") + "</tr>";
+    });
+    return h + "</tbody></table>";
+  }
+  function renderNightsPanel(insurer) {
+    var host = document.getElementById("nights-breakdown");
+    if (!host) return;
+    var b = insurer.benefits.filter(function (x) { return x.nights; })[0];
+    if (!b || !rowState(b.id).included) { host.innerHTML = ""; return; }
+    var rs = rowState(b.id);
+    host.innerHTML = '<h3>Hospital daily cash \u2014 cost by nights at a stretch</h3>' +
+      '<p class="hint">Benefit of ' + fmt(rs.sumAssured) + " per night. 3\u2013" + b.nights.baseMax + " nights at the base rate; longer stays carry the extra-night loading. Selected option is ticked.</p>" +
+      '<div class="table-scroll">' + nightsTableHTML(nightsBreakdown(insurer, b), true) + "</div>";
+  }
+
   function updateBenefitsComputedCells(insurer) {
     insurer.benefits.forEach(function (b) {
       var tr = document.querySelector('tr[data-benefit-id="' + b.id + '"]');
       if (!tr) return;
       var computed = computeBenefitRow(insurer, b);
       var eligDisplay = tr.querySelector(".elig-display");
-      var warnText = (b.minEligible && computed.eligible > 0 && computed.eligible < b.minEligible)
-        ? " ⚠ below usual min. of " + b.minEligible : "";
-      eligDisplay.innerHTML = computed.eligible + " member(s)" + (warnText ? '<div style="color:#b3261e;font-size:10px;">' + escapeHtml(warnText) + "</div>" : "");
+      eligDisplay.textContent = computed.eligible + " member(s)";
       tr.querySelector(".cell-per-member").textContent = fmt(computed.perMember);
       tr.querySelector(".cell-total").textContent = fmt(computed.total);
       tr.style.opacity = rowState(b.id).included ? "1" : "0.45";
     });
     document.getElementById("group-grand-total").textContent = fmt(groupGrandTotal());
+    renderNightsPanel(insurer);
   }
 
   // ---------------------------------------------------------------
@@ -593,108 +667,303 @@
   }
 
   // ---------------------------------------------------------------
-  // Quotation (print) view
+  // Quotation model (one source for the on-screen sheet, the PDF and the sendable text)
   // ---------------------------------------------------------------
-  function showQuotation(html) {
-    document.getElementById("quotation-sheet").innerHTML = html;
-    document.querySelector("main.app-shell").classList.add("hidden");
-    document.getElementById("quotation-view").classList.remove("hidden");
+  function fmtText(n) {
+    return "BDT " + Math.round(n || 0).toLocaleString("en-US");
   }
-  function hideQuotation() {
-    document.getElementById("quotation-view").classList.add("hidden");
-    document.querySelector("main.app-shell").classList.remove("hidden");
+  function pctOf(part, whole) {
+    return whole ? Math.round((part / whole) * 100) : 0;
   }
 
-  function quotationHeader(title) {
-    var m = state.meta;
-    return "" +
-      "<h1>" + escapeHtml(title) + "</h1>" +
-      '<div class="q-subtitle">Prepared via Bimafy internal proposal tool</div>' +
-      '<div class="quotation-meta-grid">' +
-        "<div><span>Client:</span> <strong>" + escapeHtml(m.client || "\u2014") + "</strong></div>" +
-        "<div><span>Prepared by:</span> " + escapeHtml(m.preparedBy || "\u2014") + "</div>" +
-        "<div><span>Date:</span> " + fmtDatePretty(m.date) + "</div>" +
-        "<div><span>Valid until:</span> " + fmtDatePretty(m.validUntil) + "</div>" +
-      "</div>";
-  }
-  function quotationTerms(extra) {
-    return '<div class="q-terms">' +
-      "<div>* Payment mode: Yearly in advance, unless otherwise agreed.</div>" +
-      "<div>* Prices shown are exclusive of applicable tax/VAT unless stated.</div>" +
-      "<div>* Other standard terms, conditions and exclusions of the underwriting insurer apply.</div>" +
-      "<div>* This quotation is indicative and subject to final underwriting confirmation.</div>" +
-      (extra ? "<div>* " + escapeHtml(extra) + "</div>" : "") +
-      "</div>" +
-      '<div class="q-footer">Bimafy Ltd \u2014 this quotation is generated for proposal purposes and is not a policy document.</div>';
+  function groupBenefitDetails(insurer, b) {
+    var rs = rowState(b.id);
+    var c = computeBenefitRow(insurer, b);
+    var sa = rs.sumAssured;
+    var bullets = [];
+    var table = null;
+    switch (b.id) {
+      case "life_natural_death":
+        bullets.push("Lump sum of " + fmtText(sa) + " paid to the nominee on the death of an insured employee.");
+        break;
+      case "life_accidental_death":
+        var base = rowState("life_natural_death").sumAssured;
+        bullets.push(fmtText(sa) + " payable if death is caused by an accident" +
+          (base ? " (" + pctOf(sa, base) + "% of the base life cover)." : "."));
+        break;
+      case "life_ptd_ppd":
+        bullets.push("Permanent Total Disability: " + fmtText(sa) + ".");
+        bullets.push("Permanent Partial Disability: up to " + fmtText(sa) + ", in proportion to the severity of the disability.");
+        break;
+      case "health_hospicash":
+        bullets.push("Daily cash benefit of " + fmtText(sa) + " per night of hospital admission, regardless of the actual bill.");
+        bullets.push("Covers " + b.nights.min + " to " + rs.nights + " nights at a stretch per admission; maximum payout " + fmtText(sa * rs.nights) + " per admission.");
+        bullets.push("Multiple claims in a year are allowed, with a 30\u201345 day gap between admissions.");
+        bullets.push("Longer stays (up to " + b.nights.max + " nights at a stretch) can be covered for a higher premium \u2014 see the table below.");
+        table = nightsBreakdown(insurer, b);
+        break;
+      case "health_reimbursement":
+        bullets.push("Up to " + fmtText(sa) + " per insured person per disability (illness or injury) for hospitalization expenses.");
+        bullets.push("Room & board: up to 40% of the limit (" + fmtText(sa * 0.4) + ").");
+        bullets.push("Doctor visits, investigations, medicines and consultancy during hospitalization: up to 60% of the limit (" + fmtText(sa * 0.6) + ").");
+        break;
+      case "health_opd":
+        bullets.push("Up to " + fmtText(sa) + " per insured person per year for outpatient treatment.");
+        bullets.push("Covers doctor consultations, investigations & tests, and prescription medicines.");
+        break;
+      case "critical_illness":
+        bullets.push("Lump sum of " + fmtText(sa) + " on first diagnosis of any of the 18 covered critical illnesses.");
+        break;
+      default:
+        if (b.rateBasis === "per_mille") bullets.push("Cover of " + fmtText(sa) + ".");
+    }
+    bullets.push("Covered members: " + c.eligible + (b.eligibility === "employees" ? " employees." : " insured lives (employees and enrolled dependants)."));
+    if (rs.loadingId && rs.loadingId !== "single") {
+      var opt = insurer.familyLoading.options.filter(function (o) { return o.id === rs.loadingId; })[0];
+      if (opt) bullets.push("Premium includes family loading: " + opt.label + ".");
+    }
+    return { title: b.label, bullets: bullets, table: table };
   }
 
-  function buildGroupQuotation() {
+  function groupQuoteModel() {
     var insurer = currentInsurer();
     var m = state.meta;
-    var insurerLabel = m.anonymize ? insurer.anonymizedLabel : insurer.displayName;
-    var rowsHtml = "";
+    var sections = [], details = [], grand = 0;
     var categories = [];
     insurer.benefits.forEach(function (b) { if (categories.indexOf(b.category) === -1) categories.push(b.category); });
-
-    var grand = 0;
     categories.forEach(function (cat) {
-      var catBenefits = insurer.benefits.filter(function (b) { return b.category === cat && rowState(b.id).included; });
-      if (!catBenefits.length) return;
-      rowsHtml += '<div class="q-section-title">' + escapeHtml(cat) + "</div>";
-      rowsHtml += "<table><thead><tr><th>Benefit</th><th>Sum assured</th><th>Members</th><th>Premium / member</th><th>Total premium</th></tr></thead><tbody>";
-      catBenefits.forEach(function (b) {
+      var rows = [];
+      insurer.benefits.filter(function (b) { return b.category === cat && rowState(b.id).included; }).forEach(function (b) {
         var c = computeBenefitRow(insurer, b);
         grand += c.total;
-        rowsHtml += "<tr><td>" + escapeHtml(b.label) + "</td>" +
-          "<td>" + (b.rateBasis === "per_mille" ? fmt(rowState(b.id).sumAssured) : "\u2014") + "</td>" +
-          "<td>" + c.eligible + "</td>" +
-          "<td>" + fmt(c.perMember) + "</td>" +
-          "<td>" + fmt(c.total) + "</td></tr>";
+        rows.push({
+          label: b.label,
+          cover: b.rateBasis === "per_mille" ? rowState(b.id).sumAssured : null,
+          members: c.eligible,
+          perMember: c.perMember,
+          total: c.total
+        });
+        details.push(groupBenefitDetails(insurer, b));
       });
-      rowsHtml += "</tbody></table>";
+      if (rows.length) sections.push({ category: cat, rows: rows });
     });
-
-    var html = quotationHeader("Group Life & Health Insurance Quotation") +
-      '<div class="quotation-meta-grid">' +
-        "<div><span>Underwriting insurer:</span> <strong>" + escapeHtml(insurerLabel) + "</strong></div>" +
-        "<div><span>Employees:</span> " + state.census.employees + "</div>" +
-        "<div><span>Total insured lives:</span> " + allInsuredCount() + "</div>" +
-        "<div><span>Maternity-eligible members:</span> " + state.census.maternity + "</div>" +
-      "</div>" +
-      rowsHtml +
-      '<div class="q-grand-total">Grand Total (annual): ' + fmt(grand) + "</div>" +
-      quotationTerms();
-    return html;
+    return {
+      mode: "group",
+      title: "Group Life & Health Insurance Quotation",
+      facts: [
+        ["Underwriting insurer", m.anonymize ? insurer.anonymizedLabel : insurer.displayName],
+        ["Employees", String(state.census.employees)],
+        ["Total insured lives", String(allInsuredCount())]
+      ],
+      sections: sections,
+      grand: grand,
+      details: details,
+      terms: []
+    };
   }
 
-  function buildRetailQuotation() {
+  function retailQuoteModel() {
     var m = state.meta;
-    var rowsHtml = "<table><thead><tr><th>Person</th><th>Coverage</th><th>Plan</th><th>Premium</th></tr></thead><tbody>";
-    var grand = 0;
+    var rows = [], details = [], grand = 0;
     state.retail.roster.forEach(function (person) {
       var matches = matchPlans(person);
       var r = matches.find(function (mm) { return matchKey(mm) === person.selectedKey; });
       var price = r ? r.v.prices_by_insurance_for[person.insuranceFor].grand_total_customer_pays : 0;
       grand += price;
+      var who = (person.name || "Team member") + " (age " + person.age + ", " + COMBO_LABELS[person.insuranceFor] + ")";
       var planLabel = "No plan selected";
       if (r) {
         planLabel = m.anonymize
           ? "Partner Insurer Plan \u2014 " + (r.plan.is_accident_insurance ? "Accident" : "Health") + " Cover"
           : r.plan.company + " \u2014 " + r.plan.title + (r.v.variation_title ? " (" + r.v.variation_title + ")" : "");
       }
-      rowsHtml += "<tr><td>" + escapeHtml(person.name || "Team member") + " (age " + person.age + ")</td>" +
-        "<td>" + (r ? escapeHtml(r.v.coverage_text || String(r.v.coverage_amount)) : "\u2014") + "</td>" +
-        "<td>" + escapeHtml(planLabel) + "</td>" +
-        "<td>" + fmt(price) + "</td></tr>";
+      rows.push({
+        label: who,
+        cover: r ? r.v.coverage_amount : null,
+        plan: planLabel,
+        total: price
+      });
+      if (r) {
+        var bullets = [];
+        bullets.push("Total cover: " + fmtText(r.v.coverage_amount) + " for " + (r.v.policy_period_text || "1 year") + ".");
+        (r.v.benefits || []).forEach(function (bn) {
+          bullets.push(bn.benefit + (bn.amount ? ": " + fmtText(bn.amount) : "") + (bn.is_extra ? " (additional benefit)" : ""));
+        });
+        details.push({ title: who + " \u2014 " + planLabel, bullets: bullets, table: null });
+      }
     });
-    rowsHtml += "</tbody></table>";
+    return {
+      mode: "retail",
+      title: "Life & Health Insurance Quotation",
+      facts: [["Team members", String(state.retail.roster.length)]],
+      retailRows: rows,
+      sections: [],
+      grand: grand,
+      details: details,
+      terms: ["Retail plans are individually underwritten products; coverage terms follow each selected plan's own policy wording."]
+    };
+  }
 
-    var html = quotationHeader("Life & Health Insurance Quotation") +
-      '<div class="q-section-title">Individual / Family Retail Plans</div>' +
-      rowsHtml +
-      '<div class="q-grand-total">Grand Total (annual): ' + fmt(grand) + "</div>" +
-      quotationTerms("Retail plans are individually underwritten products; coverage terms follow each selected plan's own policy wording.");
-    return html;
+  var STANDARD_TERMS = [
+    "Payment mode: yearly in advance, unless otherwise agreed.",
+    "Prices shown are exclusive of applicable tax/VAT unless stated.",
+    "Other standard terms, conditions and exclusions of the underwriting insurer apply.",
+    "This quotation is indicative and subject to final underwriting confirmation."
+  ];
+
+  // ---------------------------------------------------------------
+  // Quotation rendering: on-screen sheet / print view
+  // ---------------------------------------------------------------
+  var currentQuote = null;
+
+  function quoteHTML(q) {
+    var m = state.meta;
+    var h = "<h1>" + escapeHtml(q.title) + "</h1>" +
+      '<div class="q-subtitle">Prepared via Bimafy internal proposal tool</div>' +
+      '<div class="quotation-meta-grid">' +
+        "<div><span>Client:</span> <strong>" + escapeHtml(m.client || "\u2014") + "</strong></div>" +
+        "<div><span>Prepared by:</span> " + escapeHtml(m.preparedBy || "\u2014") + "</div>" +
+        "<div><span>Date:</span> " + fmtDatePretty(m.date) + "</div>" +
+        "<div><span>Valid until:</span> " + fmtDatePretty(m.validUntil) + "</div>" +
+        q.facts.map(function (f) { return "<div><span>" + escapeHtml(f[0]) + ":</span> " + escapeHtml(f[1]) + "</div>"; }).join("") +
+      "</div>";
+
+    if (q.mode === "group") {
+      q.sections.forEach(function (s) {
+        h += '<div class="q-section-title">' + escapeHtml(s.category) + "</div>" +
+          "<table><thead><tr><th>Benefit</th><th>Cover (BDT)</th><th>Members</th><th>Premium / member</th><th>Total premium</th></tr></thead><tbody>";
+        s.rows.forEach(function (r) {
+          h += "<tr><td>" + escapeHtml(r.label) + "</td><td>" + (r.cover !== null ? fmt(r.cover) : "\u2014") + "</td><td>" + r.members +
+            "</td><td>" + fmt(r.perMember) + "</td><td>" + fmt(r.total) + "</td></tr>";
+        });
+        h += "</tbody></table>";
+      });
+    } else {
+      h += '<div class="q-section-title">Individual / Family Retail Plans</div>' +
+        "<table><thead><tr><th>Person</th><th>Cover</th><th>Plan</th><th>Premium</th></tr></thead><tbody>";
+      q.retailRows.forEach(function (r) {
+        h += "<tr><td>" + escapeHtml(r.label) + "</td><td>" + (r.cover !== null ? fmt(r.cover) : "\u2014") + "</td><td>" +
+          escapeHtml(r.plan) + "</td><td>" + fmt(r.total) + "</td></tr>";
+      });
+      h += "</tbody></table>";
+    }
+    h += '<div class="q-grand-total">Grand Total (annual): ' + fmt(q.grand) + "</div>";
+
+    if (q.details.length) {
+      h += '<div class="q-section-title q-details-title">Coverage details</div>';
+      q.details.forEach(function (d) {
+        h += '<div class="q-detail"><div class="q-detail-title">' + escapeHtml(d.title) + "</div><ul>" +
+          d.bullets.map(function (b) { return "<li>" + escapeHtml(b) + "</li>"; }).join("") + "</ul>";
+        if (d.table) h += nightsTableHTML(d.table, false);
+        h += "</div>";
+      });
+    }
+
+    h += '<div class="q-terms">' + STANDARD_TERMS.concat(q.terms).map(function (t) { return "<div>* " + escapeHtml(t) + "</div>"; }).join("") + "</div>" +
+      '<div class="q-footer">Bimafy Ltd \u2014 this quotation is generated for proposal purposes and is not a policy document.</div>';
+    return h;
+  }
+
+  function quoteText(q, withDetails) {
+    var m = state.meta;
+    var L = [];
+    L.push(q.title);
+    L.push("Client: " + (m.client || "-"));
+    L.push("Prepared by: " + (m.preparedBy || "-") + " | Date: " + fmtDatePretty(m.date) + " | Valid until: " + fmtDatePretty(m.validUntil));
+    q.facts.forEach(function (f) { L.push(f[0] + ": " + f[1]); });
+    L.push("");
+    L.push("PREMIUM SUMMARY (annual)");
+    if (q.mode === "group") {
+      q.sections.forEach(function (s) {
+        s.rows.forEach(function (r) {
+          L.push("\u2022 " + r.label + (r.cover !== null ? " (cover " + fmtText(r.cover) + ")" : "") + ": " + r.members + " x " + fmtText(r.perMember) + " = " + fmtText(r.total));
+        });
+      });
+    } else {
+      q.retailRows.forEach(function (r) {
+        L.push("\u2022 " + r.label + " - " + r.plan + (r.cover !== null ? " (cover " + fmtText(r.cover) + ")" : "") + ": " + fmtText(r.total));
+      });
+    }
+    L.push("GRAND TOTAL (annual): " + fmtText(q.grand));
+    if (withDetails && q.details.length) {
+      L.push("");
+      L.push("COVERAGE DETAILS");
+      q.details.forEach(function (d) {
+        L.push(d.title);
+        d.bullets.forEach(function (b) { L.push("  - " + b); });
+        if (d.table) {
+          d.table.forEach(function (r) {
+            L.push("  - " + r.nights + " nights at a stretch: max " + fmtText(r.maxPayout) + " per admission, premium " + fmtText(r.perMember) + " per member (" + fmtText(r.perNight) + " per night of cover)" + (r.selected ? " [selected]" : ""));
+          });
+        }
+      });
+    }
+    L.push("");
+    STANDARD_TERMS.concat(q.terms).forEach(function (t) { L.push("* " + t); });
+    return L.join("\n");
+  }
+
+  function showQuotation(q) {
+    currentQuote = q;
+    document.getElementById("quotation-sheet").innerHTML = quoteHTML(q);
+    document.getElementById("send-status").textContent = "";
+    document.querySelector("main.app-shell").classList.add("hidden");
+    document.getElementById("quotation-view").classList.remove("hidden");
+    window.scrollTo(0, 0);
+  }
+  function hideQuotation() {
+    document.getElementById("quotation-view").classList.add("hidden");
+    document.querySelector("main.app-shell").classList.remove("hidden");
+  }
+
+  // ---------------------------------------------------------------
+  // Sending the quotation (email / WhatsApp / copy)
+  // ---------------------------------------------------------------
+  function sendStatus(msg) {
+    document.getElementById("send-status").textContent = msg;
+  }
+  function recipientName() {
+    return document.getElementById("send-name").value.trim();
+  }
+  function composeMessage(maxLen) {
+    var name = recipientName();
+    var greeting = (name ? "Dear " + name + ",\n\n" : "Hello,\n\n") + "Please find our insurance quotation below.\n\n";
+    var full = greeting + quoteText(currentQuote, true);
+    if (encodeURIComponent(full).length <= maxLen) return { text: full, shortened: false };
+    return { text: greeting + quoteText(currentQuote, false) + "\n\nFull coverage details are in the PDF quotation.", shortened: true };
+  }
+  function sendByEmail() {
+    var to = document.getElementById("send-email").value.trim();
+    if (!to) { sendStatus("Enter the recipient's email address first."); return; }
+    var msg = composeMessage(1800);
+    var subject = "Insurance quotation" + (state.meta.client ? " for " + state.meta.client : "");
+    window.location.href = "mailto:" + encodeURIComponent(to) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(msg.text);
+    sendStatus("Your email app should open with the quotation filled in" + (msg.shortened ? " (summary only because of email length limits \u2014 attach the PDF for full details)." : "."));
+  }
+  function sendByWhatsApp() {
+    var digits = document.getElementById("send-phone").value.replace(/\D/g, "");
+    if (/^0\d{10}$/.test(digits)) digits = "88" + digits;
+    var msg = composeMessage(6000);
+    var url = "https://wa.me/" + digits + "?text=" + encodeURIComponent(msg.text);
+    window.open(url, "_blank");
+    sendStatus(digits ? "WhatsApp should open with the quotation filled in." : "WhatsApp should open so you can choose the recipient.");
+  }
+  function copyQuoteText() {
+    var text = composeMessage(1e9).text;
+    var done = function () { sendStatus("Quotation text copied. Paste it into any email or chat."); };
+    var fallback = function () {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { sendStatus("Copy failed \u2014 select the quotation on the page and copy it manually."); }
+      document.body.removeChild(ta);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
   }
 
   // ---------------------------------------------------------------
@@ -716,13 +985,16 @@
     addRosterRow(); // start with one row
 
     document.getElementById("group-generate-btn").addEventListener("click", function () {
-      showQuotation(buildGroupQuotation());
+      showQuotation(groupQuoteModel());
     });
     document.getElementById("retail-generate-btn").addEventListener("click", function () {
-      showQuotation(buildRetailQuotation());
+      showQuotation(retailQuoteModel());
     });
     document.getElementById("quotation-back-btn").addEventListener("click", hideQuotation);
     document.getElementById("quotation-print-btn").addEventListener("click", function () { window.print(); });
+    document.getElementById("send-email-btn").addEventListener("click", sendByEmail);
+    document.getElementById("send-wa-btn").addEventListener("click", sendByWhatsApp);
+    document.getElementById("send-copy-btn").addEventListener("click", copyQuoteText);
   }
 
   document.addEventListener("DOMContentLoaded", init);
