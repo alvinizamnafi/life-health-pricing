@@ -36,9 +36,24 @@ one underwriter yet.
   have been stripped from this published copy** — only customer-facing prices are included.
   See `data/RETAIL-ALGORITHM-SOURCE.md` for the full pricing algorithm this was derived from.
 
+## Group-size pricing
+
+Each group benefit has `sizeTiers` in `data/group-rate-card.js`: smaller groups pay a higher rate and
+larger groups a lower one. The rate updates automatically when the census changes (the tier shown under
+each rate says which tier applies and whether the insurer has confirmed it). Moving the slider switches that
+row to a manual rate; "use group-size rate" switches it back.
+
+Confirmed by Pragati (Oct 2026 feedback): life 3.75/mille up to 200 members, 2.95 up to 400; IPD 30/mille
+(BDT 3,000 per 100k) up to 100; OPD 25% of the limit up to 100; critical illness 1.5/mille (BDT 150 per 100k);
+AD 0.75 and PTD/PPD 0.50 for small groups. Other tiers come from the original rate-card ranges and still need
+confirmation.
+
+Totals per person are shown in the editor and on the quotation (per employee, per enrolled dependant, and
+average per insured life). When the quotation is open, the browser's "Save as PDF" file name is
+"<Client> - Group Life & Health Insurance Quotation - <date>".
+
 ## Known limitations / open items
 
-- OPD is priced at BDT 200 per BDT 1,000 of annual OPD limit (slider keeps the 80-250 range from the raw notes).
 - Hospital daily cash: the raw note ".9 to 1.5k per thousand" is read as BDT 900-1,500 per BDT 1,000 of nightly
   benefit per year. 3-6 nights at a stretch use the base rate; each extra night (7-10) adds a loading that is a
   **placeholder (10% per night)** until the insurer quotes it. Confirm both with the insurer.

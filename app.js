@@ -126,6 +126,7 @@
       var rs = rowState(b.id);
       if (rs.included === undefined) rs.included = !b.optional;
       if (rs.sumAssured === undefined && b.sumAssured) rs.sumAssured = b.sumAssured.default;
+      if (rs.rateAuto === undefined) rs.rateAuto = !!b.sizeTiers;
       if (rs.rate === undefined) rs.rate = b.rate.default;
       if (b.nights) {
         if (rs.nights === undefined) rs.nights = b.nights.default;
@@ -149,9 +150,37 @@
     var base = b.rateBasis === "per_mille" ? (rs.sumAssured / 1000) * rs.rate : rs.rate;
     return base * nightsLoadFactor(b, rs, nights);
   }
+  function eligibleFor(b) {
+    var rs = rowState(b.id);
+    return rs.eligibleOverrideEnabled ? rs.eligibleOverrideValue : eligibleCountFor(b.eligibility);
+  }
+  // Group-size pricing: the first tier whose maxMembers covers the member count applies.
+  function tierFor(b, members) {
+    if (!b.sizeTiers || !b.sizeTiers.length) return null;
+    for (var i = 0; i < b.sizeTiers.length; i++) {
+      var t = b.sizeTiers[i];
+      if (t.maxMembers === null || t.maxMembers === undefined || members <= t.maxMembers) {
+        var prev = i > 0 ? b.sizeTiers[i - 1].maxMembers : 0;
+        return { tier: t, from: prev + 1, to: t.maxMembers };
+      }
+    }
+    return null;
+  }
+  function tierLabelShort(ti) {
+    if (ti.to === null || ti.to === undefined) return ti.from <= 1 ? "any size" : ti.from + "+ members";
+    return (ti.from <= 1 ? "up to " + ti.to : ti.from + "–" + ti.to) + " members";
+  }
+  // Keeps auto-priced rows on the rate for the current group size.
+  function syncAutoRate(b) {
+    var rs = rowState(b.id);
+    if (!rs.rateAuto) return;
+    var ti = tierFor(b, eligibleFor(b));
+    if (ti) rs.rate = ti.tier.rate;
+  }
   function computeBenefitRow(insurer, b) {
     var rs = rowState(b.id);
-    var eligible = rs.eligibleOverrideEnabled ? rs.eligibleOverrideValue : eligibleCountFor(b.eligibility);
+    syncAutoRate(b);
+    var eligible = eligibleFor(b);
     var perMember = basePerMember(b, rs, rs.nights);
     var mult = loadingMultiplier(insurer, rs.loadingId);
     var perMemberLoaded = perMember * mult;
@@ -166,6 +195,28 @@
       sum += computeBenefitRow(insurer, b).total;
     });
     return sum;
+  }
+  // Premium per person: an employee carries every included benefit; an enrolled
+  // dependant only the benefits that cover all insured lives (health).
+  function groupPerPerson() {
+    var insurer = currentInsurer();
+    var perEmployee = 0, perDependant = 0, grand = 0;
+    insurer.benefits.forEach(function (b) {
+      if (!rowState(b.id).included) return;
+      var c = computeBenefitRow(insurer, b);
+      grand += c.total;
+      perEmployee += c.perMember;
+      if (b.eligibility === "all_insured") perDependant += c.perMember;
+    });
+    var lives = allInsuredCount();
+    var dependants = Math.max(0, lives - (state.census.employees || 0));
+    return {
+      perEmployee: perEmployee,
+      perDependant: perDependant,
+      hasDependants: dependants > 0,
+      avgPerLife: lives ? grand / lives : 0,
+      lives: lives
+    };
   }
 
   // ---------------------------------------------------------------
@@ -377,13 +428,24 @@
     num.max = b.rate.max;
     num.step = slider.step;
     num.value = rs.rate;
-    slider.addEventListener("input", function () { rs.rate = parseFloat(slider.value); num.value = rs.rate; updateBenefitsComputedCells(insurer); });
-    num.addEventListener("input", function () { rs.rate = parseFloat(num.value) || 0; slider.value = rs.rate; updateBenefitsComputedCells(insurer); });
+    slider.className = "rate-slider";
+    num.className = "rate-num";
+    slider.addEventListener("input", function () { rs.rateAuto = false; rs.rate = parseFloat(slider.value); num.value = rs.rate; updateBenefitsComputedCells(insurer); });
+    num.addEventListener("input", function () { rs.rateAuto = false; rs.rate = parseFloat(num.value) || 0; slider.value = rs.rate; updateBenefitsComputedCells(insurer); });
     rateCell.appendChild(slider);
     rateCell.appendChild(num);
     tdRate.appendChild(rateCell);
     var rangeHint = el("div", "", '<span style="font-size:10px;color:#6b7684;">range ' + fmt2(b.rate.min) + '\u2013' + fmt2(b.rate.max) + (b.rateBasis === "per_mille" ? " /mille" : " flat/member") + '</span>');
     tdRate.appendChild(rangeHint);
+    if (b.sizeTiers) {
+      var tierHint = el("div", "tier-hint");
+      tdRate.appendChild(tierHint);
+      tierHint.addEventListener("click", function (e) {
+        if (!e.target.classList.contains("tier-reset")) return;
+        rs.rateAuto = true;
+        updateBenefitsComputedCells(insurer);
+      });
+    }
     tr.appendChild(tdRate);
 
     // family loading
@@ -491,8 +553,24 @@
       tr.querySelector(".cell-per-member").textContent = fmt(computed.perMember);
       tr.querySelector(".cell-total").textContent = fmt(computed.total);
       tr.style.opacity = rowState(b.id).included ? "1" : "0.45";
+      var rs = rowState(b.id);
+      var slider = tr.querySelector(".rate-slider"), num = tr.querySelector(".rate-num");
+      if (slider && document.activeElement !== slider) slider.value = rs.rate;
+      if (num && document.activeElement !== num) num.value = rs.rate;
+      var hint = tr.querySelector(".tier-hint");
+      if (hint) {
+        var ti = tierFor(b, computed.eligible);
+        var tierTxt = ti ? "Group-size rate (" + tierLabelShort(ti) + "): " + fmt2(ti.tier.rate) + (ti.tier.confirmed ? " — insurer-confirmed" : " — to confirm") : "";
+        hint.innerHTML = rs.rateAuto
+          ? '<span class="tier-auto">✓ ' + escapeHtml(tierTxt) + "</span>"
+          : '<span class="tier-manual">Manual rate. ' + escapeHtml(tierTxt) + '</span> <a class="tier-reset" href="javascript:void 0">use group-size rate</a>';
+      }
     });
+    var pp = groupPerPerson();
     document.getElementById("group-grand-total").textContent = fmt(groupGrandTotal());
+    document.getElementById("group-per-employee").textContent = fmt(pp.perEmployee);
+    document.getElementById("group-per-dependant").textContent = pp.hasDependants ? fmt(pp.perDependant) : "—";
+    document.getElementById("group-avg-life").textContent = fmt(pp.avgPerLife);
     renderNightsPanel(insurer);
   }
 
@@ -687,9 +765,18 @@
         bullets.push("Lump sum of " + fmtText(sa) + " paid to the nominee on the death of an insured employee.");
         break;
       case "life_accidental_death":
-        var base = rowState("life_natural_death").sumAssured;
-        bullets.push(fmtText(sa) + " payable if death is caused by an accident" +
-          (base ? " (" + pctOf(sa, base) + "% of the base life cover)." : "."));
+        var lifeRs = rowState("life_natural_death");
+        var base = lifeRs.included ? lifeRs.sumAssured : 0;
+        bullets.push("Pays " + fmtText(sa) + " to the nominee if an insured employee dies as a direct result of an accident — a sudden, unforeseen and involuntary event caused by external, violent and visible means.");
+        if (base) {
+          bullets.push("This is an ADDITIONAL benefit on top of the Group Term Life cover. If death is caused by an accident, the nominee receives " +
+            fmtText(base) + " (life cover) + " + fmtText(sa) + " (accidental death) = " + fmtText(base + sa) + " in total.");
+          bullets.push("If death is due to illness or natural causes, only the life cover of " + fmtText(base) + " is paid.");
+        } else {
+          bullets.push("Group Term Life cover is not included in this quotation, so only death caused by an accident is covered.");
+        }
+        bullets.push("Death must result from the accidental injury itself, independent of any illness. Claims need the death certificate and the police/medical reports the insurer requires.");
+        bullets.push("Not covered: suicide or attempted suicide, intentionally self-inflicted injury, injury while under the influence of drugs, or while taking part in unlawful activities — plus the other exclusions in the insurer's policy wording.");
         break;
       case "life_ptd_ppd":
         bullets.push("Permanent Total Disability: " + fmtText(sa) + ".");
@@ -738,6 +825,8 @@
         grand += c.total;
         rows.push({
           label: b.label,
+          note: b.id === "life_accidental_death" && rowState("life_natural_death").included
+            ? "Paid in addition to the life cover when death is caused by an accident" : "",
           cover: b.rateBasis === "per_mille" ? rowState(b.id).sumAssured : null,
           members: c.eligible,
           perMember: c.perMember,
@@ -757,6 +846,7 @@
       ],
       sections: sections,
       grand: grand,
+      perPerson: groupPerPerson(),
       details: details,
       terms: []
     };
@@ -833,7 +923,7 @@
         h += '<div class="q-section-title">' + escapeHtml(s.category) + "</div>" +
           "<table><thead><tr><th>Benefit</th><th>Cover (BDT)</th><th>Members</th><th>Premium / member</th><th>Total premium</th></tr></thead><tbody>";
         s.rows.forEach(function (r) {
-          h += "<tr><td>" + escapeHtml(r.label) + "</td><td>" + (r.cover !== null ? fmt(r.cover) : "\u2014") + "</td><td>" + r.members +
+          h += "<tr><td>" + escapeHtml(r.label) + (r.note ? '<span class="q-row-note">' + escapeHtml(r.note) + "</span>" : "") + "</td><td>" + (r.cover !== null ? fmt(r.cover) : "\u2014") + "</td><td>" + r.members +
             "</td><td>" + fmt(r.perMember) + "</td><td>" + fmt(r.total) + "</td></tr>";
         });
         h += "</tbody></table>";
@@ -848,6 +938,18 @@
       h += "</tbody></table>";
     }
     h += '<div class="q-grand-total">Grand Total (annual): ' + fmt(q.grand) + "</div>";
+    if (q.perPerson) {
+      var pp = q.perPerson;
+      h += '<div class="q-per-person">';
+      if (pp.hasDependants) {
+        h += "Total per employee: <strong>" + fmt(pp.perEmployee) + "</strong><br>" +
+          "Total per enrolled dependant (health benefits): <strong>" + fmt(pp.perDependant) + "</strong><br>" +
+          "Average per insured life (" + pp.lives + " lives): <strong>" + fmt(pp.avgPerLife) + "</strong>";
+      } else {
+        h += "Total per person (annual): <strong>" + fmt(pp.perEmployee) + "</strong>";
+      }
+      h += "</div>";
+    }
 
     if (q.details.length) {
       h += '<div class="q-section-title q-details-title">Coverage details</div>';
@@ -876,7 +978,7 @@
     if (q.mode === "group") {
       q.sections.forEach(function (s) {
         s.rows.forEach(function (r) {
-          L.push("\u2022 " + r.label + (r.cover !== null ? " (cover " + fmtText(r.cover) + ")" : "") + ": " + r.members + " x " + fmtText(r.perMember) + " = " + fmtText(r.total));
+          L.push("\u2022 " + r.label + (r.cover !== null ? " (cover " + fmtText(r.cover) + ")" : "") + ": " + r.members + " x " + fmtText(r.perMember) + " = " + fmtText(r.total) + (r.note ? " [" + r.note + "]" : ""));
         });
       });
     } else {
@@ -885,6 +987,15 @@
       });
     }
     L.push("GRAND TOTAL (annual): " + fmtText(q.grand));
+    if (q.perPerson) {
+      if (q.perPerson.hasDependants) {
+        L.push("Total per employee: " + fmtText(q.perPerson.perEmployee));
+        L.push("Total per enrolled dependant (health benefits): " + fmtText(q.perPerson.perDependant));
+        L.push("Average per insured life: " + fmtText(q.perPerson.avgPerLife));
+      } else {
+        L.push("Total per person (annual): " + fmtText(q.perPerson.perEmployee));
+      }
+    }
     if (withDetails && q.details.length) {
       L.push("");
       L.push("COVERAGE DETAILS");
@@ -903,8 +1014,16 @@
     return L.join("\n");
   }
 
+  // The browser uses document.title as the default file name for "Save as PDF".
+  var APP_TITLE = document.title;
+  function quoteFileName(q) {
+    var client = (state.meta.client || "").replace(/[\\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+    var kind = q.mode === "group" ? "Group Life & Health Insurance Quotation" : "Life & Health Insurance Quotation";
+    return (client ? client + " - " : "") + kind + (state.meta.date ? " - " + state.meta.date : "");
+  }
   function showQuotation(q) {
     currentQuote = q;
+    document.title = quoteFileName(q);
     document.getElementById("quotation-sheet").innerHTML = quoteHTML(q);
     document.getElementById("send-status").textContent = "";
     document.querySelector("main.app-shell").classList.add("hidden");
@@ -912,6 +1031,7 @@
     window.scrollTo(0, 0);
   }
   function hideQuotation() {
+    document.title = APP_TITLE;
     document.getElementById("quotation-view").classList.add("hidden");
     document.querySelector("main.app-shell").classList.remove("hidden");
   }

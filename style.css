@@ -199,3 +199,13 @@ tbody tr:hover { background: #fafcfd; }
 input[type="email"], input[type="tel"] {
   font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--card);
 }
+
+/* Per-person totals, group-size rate hints, AD clarification */
+.per-person-row td { font-weight: 600; font-size: 13px; color: var(--navy); background: #f6f9fb; }
+.tier-hint { font-size: 10px; margin-top: 3px; line-height: 1.35; }
+.tier-hint .tier-auto { color: #1f7a4d; }
+.tier-hint .tier-manual { color: #9a5b00; }
+.tier-hint .tier-reset { color: #1d5fa7; text-decoration: underline; cursor: pointer; }
+.q-per-person { text-align: right; font-size: 13px; color: var(--navy); margin-top: 4px; line-height: 1.6; }
+.q-per-person strong { font-weight: 800; }
+.q-row-note { display: block; font-size: 11px; color: #5a6675; font-style: italic; margin-top: 2px; }
