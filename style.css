@@ -209,3 +209,13 @@ input[type="email"], input[type="tel"] {
 .q-per-person { text-align: right; font-size: 13px; color: var(--navy); margin-top: 4px; line-height: 1.6; }
 .q-per-person strong { font-weight: 800; }
 .q-row-note { display: block; font-size: 11px; color: #5a6675; font-style: italic; margin-top: 2px; }
+
+/* Header navigation between the calculator and the ready-made plans page */
+.header-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.page-nav { display: flex; gap: 6px; }
+.page-nav a {
+  color: #d5e0ea; text-decoration: none; font-size: 13px; font-weight: 700;
+  padding: 7px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.18);
+}
+.page-nav a:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.page-nav a.active { background: var(--teal); border-color: var(--teal); color: #fff; }

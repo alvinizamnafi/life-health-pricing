@@ -26,6 +26,15 @@ native print-to-PDF, so no external dependency). The insurer's real name can be 
 the exported quotation via a checkbox in Proposal Details — useful when a deal isn't locked to
 one underwriter yet.
 
+## Ready-made plans page (`plans.html`)
+
+A separate page listing Bimafy's ready-made health plans as cards (company, premium, coverage highlights).
+Staff can filter by company or by required benefits, select one or more plans, enter the client name and
+number of persons, and generate a side-by-side quotation that can be saved as PDF (named after the client)
+or sent by email / WhatsApp. Plan data lives in `data/bimafy-plans.js`, taken from
+"Health Insurance Coverage Details - Bimafy Plans.xlsx" (verified 9 Nov 2026) with plan names and extra
+benefits from the retail catalog. Blank benefits mean "not listed", not "not covered".
+
 ## Data
 
 - `data/group-rate-card.js` — hand-maintained group insurance rate cards. Every benefit's

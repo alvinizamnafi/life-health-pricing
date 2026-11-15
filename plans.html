@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bimafy Health Plans</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="plans.css">
+</head>
+<body>
+
+<header class="app-header no-print">
+  <div class="header-row">
+    <div class="brand">
+      <h1>Bimafy Health Plans</h1>
+      <p class="tagline">Ready-made plans — pick the ones that fit your client and build a quotation</p>
+    </div>
+    <nav class="page-nav">
+      <a href="index.html">Group calculator</a>
+      <a href="plans.html" class="active">Ready-made plans</a>
+    </nav>
+  </div>
+</header>
+
+<main class="app-shell no-print" id="plans-shell">
+
+  <section class="panel plans-toolbar">
+    <div class="toolbar-grid">
+      <label>Insurance company
+        <select id="filter-company"><option value="">All companies</option></select>
+      </label>
+      <label>Sort by
+        <select id="sort-by">
+          <option value="premium-asc">Premium: low to high</option>
+          <option value="premium-desc">Premium: high to low</option>
+          <option value="ipd-desc">Hospitalization cover: high to low</option>
+          <option value="life-desc">Life cover: high to low</option>
+        </select>
+      </label>
+      <div class="must-have">
+        <span class="must-have-title">Must include</span>
+        <div class="chip-row" id="must-have-chips"></div>
+      </div>
+    </div>
+    <div class="results-line" id="results-line"></div>
+  </section>
+
+  <section class="plans-grid" id="plans-grid" aria-live="polite"></section>
+
+  <p class="source-note" id="source-note"></p>
+</main>
+
+<!-- Selection tray -->
+<div class="select-tray no-print hidden" id="select-tray">
+  <div class="tray-inner">
+    <div class="tray-text"><strong id="tray-count">0</strong> <span id="tray-label">plans selected</span>
+      <button type="button" class="tray-clear" id="tray-clear">Clear</button>
+    </div>
+    <button type="button" class="primary-btn tray-btn" id="tray-build">Build quotation →</button>
+  </div>
+</div>
+
+<!-- Quotation details dialog -->
+<div class="modal-backdrop no-print hidden" id="quote-modal" role="dialog" aria-modal="true" aria-labelledby="quote-modal-title">
+  <div class="modal">
+    <h2 id="quote-modal-title">Quotation details</h2>
+    <p class="hint" id="quote-modal-summary"></p>
+    <div class="modal-grid">
+      <label>Client / Company name
+        <input type="text" id="q-client" placeholder="e.g. Acme Garments Ltd.">
+      </label>
+      <label>Prepared by
+        <input type="text" id="q-preparedby" placeholder="Your name">
+      </label>
+      <label>Quotation date
+        <input type="date" id="q-date">
+      </label>
+      <label>Valid until
+        <input type="date" id="q-validuntil">
+      </label>
+      <label>Number of persons to insure
+        <input type="number" id="q-persons" min="1" value="1">
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="quote-modal-cancel">Cancel</button>
+      <button type="button" class="primary-btn" id="quote-modal-go">Generate quotation →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ QUOTATION VIEW ============ -->
+<section id="quotation-view" class="quotation-view hidden">
+  <div class="quotation-toolbar no-print">
+    <button id="quotation-back-btn">← Back to plans</button>
+    <button id="quotation-print-btn" class="primary-btn">Download / Print PDF</button>
+  </div>
+
+  <div class="send-panel no-print">
+    <h3>Send this quotation</h3>
+    <p class="hint">Fill in the recipient, then send. Save the PDF first (Download / Print PDF) if you want to attach it.</p>
+    <div class="send-grid">
+      <label>Recipient name
+        <input type="text" id="send-name" placeholder="e.g. Ms. Rahman">
+      </label>
+      <label>Email
+        <input type="email" id="send-email" placeholder="name@company.com">
+      </label>
+      <label>WhatsApp / mobile
+        <input type="tel" id="send-phone" placeholder="01XXXXXXXXX">
+      </label>
+    </div>
+    <div class="send-actions">
+      <button id="send-email-btn" class="secondary-btn">Email quotation</button>
+      <button id="send-wa-btn" class="secondary-btn">Send on WhatsApp</button>
+      <button id="send-copy-btn" class="secondary-btn">Copy text</button>
+    </div>
+    <div id="send-status" class="send-status" role="status"></div>
+  </div>
+
+  <div class="quotation-sheet" id="quotation-sheet"></div>
+</section>
+
+<script src="data/bimafy-plans.js"></script>
+<script src="plans.js"></script>
+</body>
+</html>
